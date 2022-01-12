@@ -44,6 +44,8 @@ class t:
 			if not data: break
 		print ('Done Receiving')
 	
+	def socket_tx_function(self):
+		print('Receive thread is running:')
 	def init_eth(self):
 		HOST='10.0.0.89'	#prologix dongle @PRE
 		PORT=1234
@@ -64,15 +66,14 @@ class t:
 	def butter_lowpass(self, cutoff, fs, order=5):
 		nyq = 0.5 * fs
 		normal_cutoff = cutoff / nyq
-		b, a = butter(order, normal_cutoff, btype='low', analog=False)
+		b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
 		return b, a
 
 	def butter_lowpass_filter(self, data, cutoff, fs, order=5):
-		b, a = butter_lowpass(cutoff, fs, order=order)
-		y = lfilter(b, a, data)
-		zi = lfilter_zi(b, a)
-		#print('zi=',zi,'zi*data[0]=',zi*data[0])
-		y, _ = lfilter(b, a, x=data,zi=zi*((data[0]+data[1]+data[2]+data[3]+data[4]+data[5])/6))
+		b, a = self.butter_lowpass(cutoff, fs, order=order)
+		y = signal.lfilter(b, a, data)
+		zi = signal.lfilter_zi(b, a)		
+		y, _ = signal.lfilter(b, a, x=data,zi=zi*((data[0]+data[1]+data[2]+data[3]+data[4]+data[5])/6))
 		return y 
 
 	def acq(self):
@@ -86,7 +87,7 @@ class t:
 		while True:
 			i = i+1
 			self.s.sendall(b'Read?\r\n')
-			time.sleep(1)
+			time.sleep(0.7)
 			#print (m)
 			dT=time.time()-t1
 			#y.append(float(m))		
@@ -95,7 +96,7 @@ class t:
 			dx.append(dT-x[len(x)-2])
 			if (i/50.0)==int(i/50):
 				print (i)
-			if i>=350:
+			if i>=250:
 				break
 		print ('DMM raw data statistics')
 		print ('-----------------------')
@@ -105,9 +106,9 @@ class t:
 		fs=i/dT		# Sampling frequency
 		order=6
 		lpf=[self.y2[0]]
-		lpf=butter_lowpass_filter(self.y2, cutoff, fs, order)
+		lpf=self.butter_lowpass_filter(self.y2, cutoff, fs, order)
 		plt.figure()
-		plt.plot(x,self.y2,'b',x,lpf,'r')
+		plt.plot(x,self.y2[-250:],'b',x,lpf[-250:],'r')
 		plt.legend(('DMM samples', 'LPF'), loc='best')
 		plt.xlabel('Time [sec]')
 		plt.ylabel('U[Volt]')
