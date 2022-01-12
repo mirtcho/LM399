@@ -16,7 +16,7 @@ class t:
 	def __init__(self):
 		self.data = []
 		#init Array M3500A @USB
-		#self.init_array_m3500a()
+		self.init_array_m3500a()
 		#init HP34960A via ethernet dongle
 		self.y1 = []		#measurements from Array M3500a USB
 		self.t1 = []		#timestamp from Array M3500m samples 
@@ -30,21 +30,20 @@ class t:
 		self.usb_inst = self.visa_rm.open_resource('USB0::0x164E::0x0FA3::TW00004979::INSTR')
 		print(self.usb_inst.query("*IDN?"))
 		print(self.usb_inst.query("READ?"))
-		self.usb_thread = threading.Thread(target=self.socket_rcv_function)
+		self.usb_thread = threading.Thread(target=self.usb_rcv_function)
 		self.usb_thread.start()
 
 	def usb_rcv_function(self):
+		print('USB Tx/Rx thread is running ')
 		self.usb_rcv_cnt=0
-		t0=time.time()	#mark the begin time
-		t1=t0
+		t0=time.time()	#mark the begin time		
 		while True:
-			m = inst.query("MEAS:VOLT:DC?")
+			m = self.usb_inst.query("MEAS:VOLT:DC?")
 			#print (m)
 			self.usb_rcv_cnt=self.usb_rcv_cnt+1
-			t2=time.time()
-			y1.append(float(m))		
-			x1.append(t2)
-			t1=t2
+			t=time.time()
+			self.y1.append(float(m))		
+			self.t1.append(t)			
 
 	def socket_rcv_function(self):
 		print('Receive socket thread is running:')
@@ -81,6 +80,7 @@ class t:
 		a=self.s.connect((HOST,1234))
 		self.eth_rx = threading.Thread(target=self.socket_rcv_function)
 		self.eth_tx = threading.Thread(target=self.socket_tx_function)
+		time.sleep(0.3)
 		self.eth_rx.start()		
 		self.s.sendall(b'++addr 9\r\n')
 		time.sleep(1)
@@ -105,12 +105,20 @@ class t:
 		y, _ = signal.lfilter(b, a, x=data,zi=zi*((data[0]+data[1]+data[2]+data[3]+data[4]+data[5])/6))
 		return y 
 
+	def print_usb_statistics(self):
+		print ('Array M3500A raw data statistics from :',self.usb_rcv_cnt,' Samples')
+		print ('----------------------------------------')
+		print ('mean=',stat.mean(self.y1),'  stdev=',stat.stdev(self.y1),'  Vpp=',max(self.y1)-min(self.y1))
+		dT = self.t1[self.usb_rcv_cnt-1]-self.t1[2]
+		print ('execution time=',dT,'sec.   Sample rate[Smpl/sec=',(self.usb_rcv_cnt-1)/dT)
+	
 	def refresh_plots(self):
-		print ('DMM raw data statistics from :',self.socket_rcv_cnt,' Samples')
+		print ('HP34970A raw data statistics from :',self.socket_rcv_cnt,' Samples')
 		print ('----------------------------------------')
 		print ('mean=',stat.mean(self.y2),'  stdev=',stat.stdev(self.y2),'  Vpp=',max(self.y2)-min(self.y2))
-		dT = self.t2[self. socket_rcv_cnt-1]-self.t2[2]
+		dT = self.t2[self.socket_rcv_cnt-1]-self.t2[2]
 		print ('execution time=',dT,'sec.   Sample rate[Smpl/sec=',(self.socket_rcv_cnt-1)/dT)
+		self.print_usb_statistics()
 		cutoff=.02						# Fc=0.1Hz
 		fs=(self.socket_rcv_cnt-1)/dT	# Sampling frequency
 		order=6
@@ -125,6 +133,7 @@ class t:
 			plt.grid(True)
 			self.first_time_plot_flag=False
 		plt.plot(self.t2,self.y2,'b',self.t2,lpf,'r')
+		plt.plot(self.t2,self.y2,'b',self.t2,lpf,'r',self.t1,self.y1)
 		plt.pause(0.5)
 	
 	def acq(self):
@@ -136,10 +145,6 @@ class t:
 		t1= time.time() # begin measurements time in seconds float type
 		while True:
 			i = i+1
-			dT=time.time()-t1
-			#y.append(float(m))		
-			#x.append(dT)
-			#dx.append(dT-x[len(x)-2])
 			time.sleep(.2) #poll in main() must be faster that the threads. Otherwise we miss the moment to update the graphs		
 			if (self.socket_rcv_cnt/50.0)==int(self.socket_rcv_cnt/50):
 				self.refresh_plots()
