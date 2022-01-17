@@ -1,4 +1,5 @@
-import pyvisa
+#import pyvisa
+import usbtmc
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +12,7 @@ import time
 import allantools
 import socket
 import threading
+import csv
 
 class t:
 	def __init__(self):
@@ -23,27 +25,41 @@ class t:
 		self.y2 = []		#measurements hp34970a via ethernet
 		self.t2 = []		#time stamp hp34970a samples - via ethernet
 		self.first_time_plot_flag=True
+		#initialize the file outputs - CSV format
+		file_header=['time','sample']
+		f1=open('array3500.csv', 'w', encoding='UTF8')
+		self.y1_writer= csv.writer(f1)
+		self.y1_writer.writerow(file_header)
+		f2=open('hp34970.csv', 'w', encoding='UTF8')
+		self.y2_writer= csv.writer(f2)
+		self.y2_writer.writerow(file_header)
 
 	def init_array_m3500a(self): 
-		self.visa_rm = pyvisa.ResourceManager()
-		self.visa_rm.list_resources()
-		self.usb_inst = self.visa_rm.open_resource('USB0::0x164E::0x0FA3::TW00004979::INSTR')
-		print(self.usb_inst.query("*IDN?"))
-		print(self.usb_inst.query("READ?"))
+		#self.visa_rm = pyvisa.ResourceManager()
+		#self.visa_rm.list_resources()
+		#self.usb_inst = self.visa_rm.open_resource('USB0::0x164E::0x0FA3::TW00004979::INSTR')
+		self.usb_inst=usbtmc.Instrument(5710,4003)
+		print(self.usb_inst.ask("*IDN?"))
+		print(self.usb_inst.ask("READ?"))
 		self.usb_thread = threading.Thread(target=self.usb_rcv_function)
 		self.usb_thread.start()
+		self.lock=threading.Lock()
 
 	def usb_rcv_function(self):
 		print('USB Tx/Rx thread is running ')
 		self.usb_rcv_cnt=0
 		t0=time.time()	#mark the begin time		
 		while True:
-			m = self.usb_inst.query("MEAS:VOLT:DC?")
+			m = self.usb_inst.ask("MEAS:VOLT:DC?")
 			#print (m)
-			self.usb_rcv_cnt=self.usb_rcv_cnt+1
 			t=time.time()
+			self.lock.acquire()
+			self.usb_rcv_cnt=self.usb_rcv_cnt+1			
 			self.y1.append(float(m))		
-			self.t1.append(t)			
+			self.t1.append(t)
+			#write to file timestamp, sample data
+			self.y1_writer.writerow([time.time(),float(m)])	
+			self.lock.release()
 
 	def socket_rcv_function(self):
 		print('Receive socket thread is running:')
@@ -56,9 +72,13 @@ class t:
 			if float(data)>7 and float(data)<11:
 				#print(data, ' Cnt=',self.socket_rcv_cnt)
 				t2=time.time()
+				self.lock.acquire()
 				self.socket_rcv_cnt=self.socket_rcv_cnt+1
 				self.y2.append(float(data))
 				self.t2.append(float(t2))
+				#write to file timestamp, sample data
+				self.y2_writer.writerow([time.time(),float(data)])
+				self.lock.release()
 				#print (self.socket_rcv_cnt,':',float(data),'   dT:',(t2-t1))
 				t1=t2
 			time.sleep(0.1)
@@ -80,6 +100,9 @@ class t:
 		a=self.s.connect((HOST,1234))
 		self.eth_rx = threading.Thread(target=self.socket_rcv_function)
 		self.eth_tx = threading.Thread(target=self.socket_tx_function)
+		
+		
+		
 		time.sleep(0.3)
 		self.eth_rx.start()		
 		self.s.sendall(b'++addr 9\r\n')
@@ -108,14 +131,18 @@ class t:
 	def print_usb_statistics(self):
 		print ('Array M3500A raw data statistics from :',self.usb_rcv_cnt,' Samples')
 		print ('----------------------------------------')
+		self.lock.acquire()
 		print ('mean=',stat.mean(self.y1),'  stdev=',stat.stdev(self.y1),'  Vpp=',max(self.y1)-min(self.y1))
+		self.lock.release()
 		dT = self.t1[self.usb_rcv_cnt-1]-self.t1[2]
 		print ('execution time=',dT,'sec.   Sample rate[Smpl/sec=',(self.usb_rcv_cnt-1)/dT)
 	
 	def refresh_plots(self):
 		print ('HP34970A raw data statistics from :',self.socket_rcv_cnt,' Samples')
 		print ('----------------------------------------')
+		self.lock.acquire()
 		print ('mean=',stat.mean(self.y2),'  stdev=',stat.stdev(self.y2),'  Vpp=',max(self.y2)-min(self.y2))
+		self.lock.release()
 		dT = self.t2[self.socket_rcv_cnt-1]-self.t2[2]
 		print ('execution time=',dT,'sec.   Sample rate[Smpl/sec=',(self.socket_rcv_cnt-1)/dT)
 		self.print_usb_statistics()
@@ -132,7 +159,7 @@ class t:
 			plt.title('HP34970A')
 			plt.grid(True)
 			self.first_time_plot_flag=False
-		plt.plot(self.t2,self.y2,'b',self.t2,lpf,'r')
+		#plt.plot(self.t2,self.y2,'b',self.t2,lpf,'r')
 		plt.plot(self.t2,self.y2,'b',self.t2,lpf,'r',self.t1,self.y1)
 		plt.pause(0.5)
 	
@@ -149,6 +176,10 @@ class t:
 			if (self.socket_rcv_cnt/50.0)==int(self.socket_rcv_cnt/50):
 				self.refresh_plots()
 			if self.socket_rcv_cnt>=25000:
+				#ToDo 
+				#close csv files
+				#stop threads
+				#release sockets
 				break
 
 	#strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
