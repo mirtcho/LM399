@@ -1,5 +1,5 @@
 #import pyvisa
-import usbtmc
+#import usbtmc
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -181,5 +181,107 @@ class t:
 				#stop threads
 				#release sockets
 				break
+
+
+class gr:
+	def __init__(self):
+		#f1=open('array3500.csv', 'r', encoding='UTF8')
+		#f2=open('hp34970.csv', 'r', encoding='UTF8')		
+		#self.y1_reader= csv.reader(f1)
+		#self.y2_reader= csv.reader(f2)
+		self.x1 = []
+		self.y1 = []
+		self.n1 = 0 #nr of samples
+		self.sr1= 0 #sample rate
+		self.x2 = []
+		self.y2 = []
+		self.n2 = 0
+		self.sr2= 0
+		
+	def read(self):
+		with open('array3500.csv', encoding='UTF8') as csvfile:
+			y1_reader = csv.reader(csvfile)
+			for row in y1_reader:
+				if (self.n1==0):
+					self.x1.append(float(0.0))
+					self.y1.append(float(0.0))
+				if (self.n1==1):
+					t10=float(row[0])-0.25
+					self.x1.append(float(0.25))
+					self.y1.append(float(row[1]))
+				if (self.n1>1):
+					self.x1.append(float(row[0])-t10)
+					self.y1.append(float(row[1]))
+				self.n1=self.n1+1
+			self.sr1=(self.n1-2)/(float(self.x1[(self.n1-2)])-float(self.x1[1]))
+			print ('read array3500.csv finished. ',self.n1, 'lines read with Sample Rate:',self.sr1)
+			#fake the first sample
+			self.y1[0]=self.y1[1]
+		with open('hp34970.csv', encoding='UTF8') as csvfile:
+			y2_reader = csv.reader(csvfile)
+			for row in y2_reader:
+				if (self.n2==0):
+					self.x2.append(float(0.0))
+					self.y2.append(float(0.0))
+				if (self.n2==1):
+					t20=float(row[0])-0.25
+					self.x2.append(float(0.25))
+					self.y2.append(float(row[1]))
+				if (self.n2>1):
+					self.x2.append(float(row[0])-t20)
+					self.y2.append(float(row[1]))
+				self.n2=self.n2+1
+			self.sr2=(self.n2-2)/(float(self.x2[self.n2-2])-float(self.x2[1]))
+			print ('read hp34970.csv finished. ',self.n2, 'lines read with Sample Rate:',self.sr2)
+			
+	def pl(self):
+		self.read()
+		#process Array M3500A
+		Y1 = fft(self.y1)
+		N  = len(Y1)
+		n1 = np.arange(N)
+		T  = N/self.sr1
+		freq = n1/T
+		
+		plt.figure(figsize = (12, 6))
+		plt.subplot(121)
+		#remove the DC component /zero harmonics
+		plt.stem(freq[1:], np.abs(Y1[1:]), 'b', markerfmt=" ", basefmt="-b")		
+		plt.xlabel('Freq (Hz)')
+		plt.ylabel('FFT Amplitude |Y1(freq)|')
+		plt.xlim(0, 4)
+		plt.title('Array M3500A')
+		plt.subplot(122)
+		plt.plot(self.x1[1:(self.n1-2)], self.y1[1:(self.n1-2)], 'r')
+		plt.xlabel('Time (s)')
+		plt.ylabel('Amplitude')
+		plt.tight_layout()
+		plt.show()
+		
+		#process the HP34970A
+		Y2 = fft(self.y2[2:])
+		N  = len(Y2)
+		n2 = np.arange(N)
+		T  = N/self.sr2
+		freq = n2/T
+		print (Y2)
+		
+		plt.figure(figsize = (12, 6))
+		plt.subplot(121)
+		#remove the DC component. It is zero harmonics
+		plt.stem(freq[1:], np.abs(Y2[1:]), 'b', markerfmt=" ", basefmt="-b")		
+		plt.xlabel('Freq (Hz)')
+		plt.ylabel('FFT Amplitude |Y1(freq)|')
+		plt.xlim(0, 1.1)
+		plt.title('HP34970A')
+		plt.subplot(122)
+		plt.plot(self.x2[1:(self.n2-2)], self.y2[1:(self.n2-2)], 'r')
+		plt.xlabel('Time (s)')
+		plt.ylabel('Amplitude')
+		plt.tight_layout()
+		plt.show()
+
+		
+		
 
 	#strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
