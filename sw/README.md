@@ -1,1 +1,1 @@
-# PC/raspeerry software mainly python scripts
+# PC/raspberry software mainly python scripts
