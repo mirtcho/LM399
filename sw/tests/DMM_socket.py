@@ -18,8 +18,8 @@ class DMM():
         # Create and start the receive thread
         self.T1=time.time()
         self.sample_nr = 0
-        self.samples = np.array([],dtype=float)
-        self.dT      = np.array([],dtype=float)
+        self.samples = np.array([],dtype=np.double)
+        self.dT      = np.array([],dtype=np.double)
         self.rcv_thread_enable = True
         self.receive_thread = threading.Thread(target=self.receive_data)
         self.receive_thread.start()
