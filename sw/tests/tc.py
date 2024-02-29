@@ -67,15 +67,9 @@ class cts():
         #print (tx_packet)
         self.ser.write(tx_packet)
         return 0
-    
-    def sa(self):
-        #function for test purpose
-        tx_packet=b'\x02\x81\xE1\xB0\xA0\xAD\xB1\xB4\xAE\xB5\xC3\x03'
-        self.ser.write(tx_packet)
-     
+        
     def an_decode(self,rx_packet):
-        #decodes the answer message from analog all
-        #rx_packet = b'\xb0\xa0\xb0\xb5\xb5\xae\xb3\xa0\xb0\xb5\xb5\xae\xb0\xf3\x03\x02\x81\xc1\xb1\xa0\xad\xb0\xb0\xae\xb9\xa0\xb0\xb1\xb0\xae\xb0\xe4\x03'
+        #decodes the answer message from analog 
         self.tmp = list(rx_packet)
         # reset 8-th bits        
         for i in range (rx_packet.__len__()):
@@ -92,7 +86,6 @@ class cts():
         #print ('decoded answer - Tset=',Tset,'  Tact=',Tact)
         return Tset,Tact
 
-
     def __del__(self):
         self.ser.close()
 
@@ -108,10 +101,14 @@ class tc():
     def tst(self,nr_samples=50):
         for Toffset in range (200):
             self.cts.set_analog(20+Toffset/10)
+            time.sleep(0.5)
+            self.cts.set_analog(20+Toffset/10)
+            self.cts.set_analog(20+Toffset/10)
             self.cts.analog() #dumm.y read to solve issu with wrong read after Tset        
             for i in range (int(nr_samples)):
                 array_data = self.e.read()
                 bm_data = self.bm.read()
                 self.cts.analog() 
+                #check validity of data before save to file
                 print ('array=',array_data,'  bm869=',bm_data,'Tset=',self.cts.Tset,'Tact=',self.cts.Tact)
             
