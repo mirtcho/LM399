@@ -5,9 +5,9 @@ import numpy as np
 import pickle as pkl
 
 class DMM():
-    def __init__(self,ip='10.0.0.68'):
+    def __init__(self,ip='10.0.0.85'):
                 # Set up your socket connection
-        self.server_address = (ip, 1234)  # Adjust the address and port accordingly
+        self.server_address = (ip, 5025)  # Adjust the address and port accordingly
         #sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock  = socket.socket(socket.AF_INET, socket.SOCK_STREAM,socket.IPPROTO_TCP)
         self.sock.connect(self.server_address)
@@ -24,9 +24,9 @@ class DMM():
         self.receive_thread = threading.Thread(target=self.receive_data)
         self.receive_thread.start()
         #prologix init code
-        self.sock.sendall(b'++addr 9\r\n')
+        #self.sock.sendall(b'++addr 9\r\n')
         time.sleep(1)
-        self.sock.sendall(b'++auto\r\n')
+        #self.sock.sendall(b'++auto\r\n')
         time.sleep(1)
         self.sock.sendall(b'Read?\r\n')
         time.sleep(1)
@@ -85,10 +85,10 @@ class DMM():
                 self.receive_semaphor  = False
                 self.sock.sendall(b'Read?\r\n')
                 #semaphor for HP34970
-                #while self.receive_semaphor == False:
-                #    time.sleep(0.1)		
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)		
                 #Array fast delay because hi answer imediatly with lates value
-                time.sleep(0.5)		
+                #time.sleep(0.5)		                
         except KeyboardInterrupt:
             print("Exiting program.")
         finally:
