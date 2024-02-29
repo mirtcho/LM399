@@ -108,7 +108,7 @@ class tc():
     def tst(self,nr_samples=50):
         for Toffset in range (200):
             self.cts.set_analog(20+Toffset/10)
-            self.cts.analog() #dummy read to solve issu with wrong read after Tset        
+            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset        
             for i in range (int(nr_samples)):
                 array_data = self.e.read()
                 bm_data = self.bm.read()

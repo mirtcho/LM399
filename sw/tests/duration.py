@@ -18,7 +18,7 @@ class t:
 	def __init__(self):
 		self.data = []
 		#init Array M3500A @USB
-		self.init_array_m3500a()
+		#self.init_array_m3500a()
 		#init HP34960A via ethernet dongle
 		self.y1 = []		#measurements from Array M3500a USB
 		self.t1 = []		#timestamp from Array M3500m samples 
@@ -33,44 +33,19 @@ class t:
 		f2=open('hp34970.csv', 'w', encoding='UTF8')
 		self.y2_writer= csv.writer(f2)
 		self.y2_writer.writerow(file_header)
-
-	def init_array_m3500a(self): 
-		#self.visa_rm = pyvisa.ResourceManager()
-		#self.visa_rm.list_resources()
-		#self.usb_inst = self.visa_rm.open_resource('USB0::0x164E::0x0FA3::TW00004979::INSTR')
-		self.usb_inst=usbtmc.Instrument(5710,4003)
-		print(self.usb_inst.ask("*IDN?"))
-		print(self.usb_inst.ask("READ?"))
-		self.usb_thread = threading.Thread(target=self.usb_rcv_function)
-		self.usb_thread.start()
 		self.lock=threading.Lock()
 
-	def usb_rcv_function(self):
-		print('USB Tx/Rx thread is running ')
-		self.usb_rcv_cnt=0
-		t0=time.time()	#mark the begin time		
-		while True:
-			m = self.usb_inst.ask("MEAS:VOLT:DC?")
-			#print (m)
-			t=time.time()
-			self.lock.acquire()
-			self.usb_rcv_cnt=self.usb_rcv_cnt+1			
-			self.y1.append(float(m))		
-			self.t1.append(t)
-			#write to file timestamp, sample data
-			self.y1_writer.writerow([time.time(),float(m)])	
-			self.lock.release()
 
 	def socket_rcv_function(self):
 		print('Receive socket thread is running:')
-		self. socket_rcv_cnt=0
+		self.socket_rcv_cnt = 0
 		t0=time.time()	#mark the begin time
 		t1=t0
 		while True:
 			data = self.s.recv(16)
-			#print(data)
+			print(data)
 			if float(data)>7 and float(data)<11:
-				#print(data, ' Cnt=',self.socket_rcv_cnt)
+				print(data, ' Cnt=',self.socket_rcv_cnt)
 				t2=time.time()
 				self.lock.acquire()
 				self.socket_rcv_cnt=self.socket_rcv_cnt+1
@@ -92,8 +67,8 @@ class t:
 			time.sleep(1)
 		
 		
-	def init_eth(self):
-		HOST='10.0.0.89'	#prologix dongle @PRE
+	def init_eth(self,ip_addr='10.0.0.102'):
+		HOST=ip_addr	#prologix dongle @PRE
 		PORT=1234
 		buf_len=10
 		self.s=socket.socket(socket.AF_INET,socket.SOCK_STREAM,socket.IPPROTO_TCP)
@@ -104,7 +79,8 @@ class t:
 		
 		
 		time.sleep(0.3)
-		self.eth_rx.start()		
+		self.eth_rx.start()	
+		time.sleep(1.3)
 		self.s.sendall(b'++addr 9\r\n')
 		time.sleep(1)
 		self.s.sendall(b'++auto\r\n')
