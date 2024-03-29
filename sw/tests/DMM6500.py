@@ -2,12 +2,13 @@ import socket
 import threading
 import time
 import numpy as np
+import pandas as pd
 import pickle as pkl
 
 class DMM():
-    def __init__(self,ip='10.0.0.68'):
+    def __init__(self,ip='10.0.0.85'):
                 # Set up your socket connection
-        self.server_address = (ip, 1234)  # Adjust the address and port accordingly
+        self.server_address = (ip, 1234)  # Adjust the address and port accordingly port 5025 for DMM6500  Prologix:1234
         #sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock  = socket.socket(socket.AF_INET, socket.SOCK_STREAM,socket.IPPROTO_TCP)
         self.sock.connect(self.server_address)
@@ -24,14 +25,21 @@ class DMM():
         self.receive_thread = threading.Thread(target=self.receive_data)
         self.receive_thread.start()
         #prologix init code
-        self.sock.sendall(b'++addr 9\r\n')
+        #self.sock.sendall(b'++addr 9\r\n')
         time.sleep(1)
-        self.sock.sendall(b'++auto\r\n')
+        #self.sock.sendall(b'++auto\r\n')
+        time.sleep(1)
+        self.sock.sendall(b'Read?\r\n')
         time.sleep(1)
         self.sock.sendall(b'Read?\r\n')
         time.sleep(1)
-        self.sock.sendall(b'Read?\r\n')
-        time.sleep(1)        
+
+    def __dell__(self):
+        self.close()
+
+    def close(self):
+        self.rcv_thread_enable = False  # thread should be auto terminated by function exit         
+        self.sock.shutdown(socket.SHUT_RDWR) #shutdown both otherwise SHUT_RD or SHUT_WR
 
     def receive_data(self):
         buffer_size = 1  # Adjust the buffer size as needed was 1024
@@ -76,7 +84,9 @@ class DMM():
         except:
             #do nothing skip wrong data
             self.a=1
-    def main(self):
+            print ('answer is not numeric ANS=',data)
+
+    def main(self, f_name='array3500.pkl'):
         #self.eth_tx.start()
         try:
             # Your main program logic goes here
@@ -85,10 +95,10 @@ class DMM():
                 self.receive_semaphor  = False
                 self.sock.sendall(b'Read?\r\n')
                 #semaphor for HP34970
-                #while self.receive_semaphor == False:
-                #    time.sleep(0.1)		
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)		
                 #Array fast delay because hi answer imediatly with lates value
-                time.sleep(0.5)		
+                #time.sleep(0.5)		                
         except KeyboardInterrupt:
             print("Exiting program.")
         finally:
@@ -96,8 +106,43 @@ class DMM():
             #connection.close()
             self.rcv_thread_enable = False #terminate the receive thread
             self.sock.shutdown(socket.SHUT_RDWR) #shutdown both otherwise SHUT_RD or SHUT_WR
-            self.f.save (fileName='array3500.pkl',arrayInput=self.samples)
+            self.f.save (fileName=f_name, arrayInput=self.samples)
+    def main2(self,f_name):
+        try:
+            for i in range(3):
+                self.receive_semaphor  = False
+                #self.sock.sendall(b'MEAS:VOLT:DC? 0.1,0.00000003, (@101)\r\n')  # takes 4,1sec=100PLC+AZ?
+                #self.sock.sendall(b'MEAS:VOLT:DC? 0.1,0.00000008, (@101)\r\n')  # takes 1.0sec = 20PLC
+                self.sock.sendall(b'MEAS:VOLT:DC? 0.1,0.0000001, (@101)\r\n')  # takes 0.6sec = 10PLC
+                #self.sock.sendall(b'MEAS:VOLT:DC? 0.1,0.0000003, (@101)\r\n')  # takes 0.25sec 1PLC but slow. Use 10PLC!!
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)
+                time.sleep(0.5)
 
+                self.receive_semaphor  = False
+                self.sock.sendall(b'MEAS:VOLT:DC? 100.0,0.0001, (@201)\r\n')  # takes 0.6sec = 10PLC
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)
+                time.sleep(0.5)
+
+                self.receive_semaphor  = False
+                #self.sock.sendall(b'Read?\r\n')
+                self.sock.sendall(b'MEAS:TEMP? THER,10000, (@102)\r\n')  # takes 0.2sec
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)
+                time.sleep(0.5)
+                self.receive_semaphor  = False
+                #self.sock.sendall(b'Read?\r\n')
+                self.sock.sendall(b'MEAS:TEMP? THER,10000, (@103)\r\n')  # takes 0.2sec
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)
+                time.sleep(0.5)
+                self.sock.sendall(b'MEAS:TEMP? THER,10000, (@104)\r\n')  # takes 0.2sec
+                while self.receive_semaphor == False:
+                    time.sleep(0.01)
+                time.sleep(0.5)
+        except :
+            print("Exiting program error.")
 
 class fast_file():
   def __init__(self):
@@ -118,3 +163,12 @@ class fast_file():
     fileObject2.close()    
     print ('Rrite time=',time.time()-t0,'[sec.]')
     return (read_data)
+
+class test():
+  def __init__(self):
+      self.df = pd.DataFrame([],columns=['time','dV','Tamb','Tref','Tdmm','Vdc'])
+      self.dmm = DMM()
+      self.fast_file=fast_file()
+  def add_row(self,time,sample,Tamb,Tref,Tdmm,Vdc):
+      new_row = {'time':0.5,'dV':0.0012,'Tamb':15.2,'Tref':24.5,'Tdmm':20.2,'Vdc':16.0811}
+      self.df.loc[len(self.df.index)] = new_row
