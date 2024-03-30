@@ -17,11 +17,9 @@ class DMM():
         print("Waiting for a connection...")
         #connection, client_address = sock.accept()
         # Create and start the receive thread
-        self.T1=time.time()
-        self.sample_nr = 0
-        self.samples = np.array([],dtype=np.double)
-        self.dT      = np.array([],dtype=np.double)
+        self.receive_semaphor = False
         self.rcv_thread_enable = True
+        self.answer_type = 'str'
         self.receive_thread = threading.Thread(target=self.receive_data)
         self.receive_thread.start()
         #prologix init code
@@ -29,14 +27,13 @@ class DMM():
         time.sleep(1)
         #self.sock.sendall(b'++auto\r\n')
         time.sleep(1)
+        self.answer_type = 'float'
         self.sock.sendall(b'Read?\r\n')
         time.sleep(1)
         self.sock.sendall(b'Read?\r\n')
         time.sleep(1)
-
     def __dell__(self):
         self.close()
-
     def close(self):
         self.rcv_thread_enable = False  # thread should be auto terminated by function exit         
         self.sock.shutdown(socket.SHUT_RDWR) #shutdown both otherwise SHUT_RD or SHUT_WR
@@ -71,20 +68,64 @@ class DMM():
 
     def process_data(self,data):
         # Implement your data processing logic here
-        try:
-            float_data=float (data.decode('utf-8'))
-            T2=time.time()
-            dT = T2-self.T1
-            self.sample_nr = self.sample_nr + 1
-            self.samples = np.append(self.samples,float_data)
-            self.dT      = np.append(self.dT,dT)
-            print(self.sample_nr, ". V:",float_data, " dT=%.3f" %dT )
-            self.receive_semaphor=True
-            self.T1=T2
-        except:
-            #do nothing skip wrong data
-            self.a=1
-            print ('answer is not numeric ANS=',data)
+        if (self.answer_type == 'float'):
+            try:
+                float_data=float (data.decode('utf-8'))
+                self.rcv_float = float_data
+                self.receive_semaphor=True
+            except:
+                #do nothing skip wrong data
+                self.a=1
+                print ('answer is not numeric ANS=',data)
+
+    def SCPIread(self):
+        while self.receive_semaphor == False:
+            time.sleep(0.01)
+        self.answer_type       = 'float'
+        self.receive_semaphor  = False
+        self.sock.sendall(b'Read?\r\n')
+        while self.receive_semaphor == False:
+            time.sleep(0.1)
+        return self.rcv_float
+    
+    def find_resolution (self,plc):
+        # this function is based HP34970a documentation 
+        # resoltion and PLC settings are only checked at HP349700a
+        resolution = 0
+        c= {"PLC":       [0.02,   0.2,     1,        2,        10,       20,       100,       200],
+            "Resolution":[0.0001, 0.00001, 0.000003, 0.0000022, 0.000001, 0.0000008, 0.0000003, 0.00000022 ],
+            'Digit':     [4.5,    5.5,     5.5,      6.5,      6.5,      6.5,       6.5,       6.5],
+            'Bits':      [15,     18,      20,       21,       24,       25,       26,         26 ] }
+        i = 0
+        for ind in c['PLC']:
+            if ind == plc:
+                resolution = c['Resolution'][i]
+                #print ('Resolution =',resolution)
+            i = i+1
+        return resolution
+
+    def MeasDC(self, range, plc,channel):
+        res = self.find_resolution(plc)
+        res = res * range   # scale the resolution to range - note HP manuals says that range is not scaled!
+        cmd = b'MEAS:VOLT:DC? '+ str(range).encode('utf-8') + b',' + str(res).encode('utf-8') + b', (@' + str(channel).encode('utf-8') + b')\r\n'
+        # print ('CMD=',cmd)
+        #while self.receive_semaphor == False:
+        #    time.sleep(0.01)
+        self.answer_type       = 'float'
+        self.receive_semaphor  = False
+        self.sock.sendall(cmd)
+        while self.receive_semaphor == False:
+            time.sleep(0.1)
+        return self.rcv_float
+    
+    def MeasNTC(self, channel):
+        cmd = b'MEAS:TEMP? THER,10000, (@'+ str(channel).encode('utf-8') + b')\r\n'  # takes 0.2sec
+        self.answer_type       = 'float'
+        self.receive_semaphor  = False
+        self.sock.sendall(cmd)  # takes 0.2sec
+        while self.receive_semaphor == False:
+            time.sleep(0.01)
+        return self.rcv_float
 
     def main(self, f_name='array3500.pkl'):
         #self.eth_tx.start()
@@ -161,14 +202,42 @@ class fast_file():
     fileObject2 = open(fileName, 'rb')
     read_data = pkl.load(fileObject2)    
     fileObject2.close()    
-    print ('Rrite time=',time.time()-t0,'[sec.]')
+    print ('Read time=',time.time()-t0,'[sec.]')
     return (read_data)
 
 class test():
-  def __init__(self):
-      self.df = pd.DataFrame([],columns=['time','dV','Tamb','Tref','Tdmm','Vdc'])
-      self.dmm = DMM()
-      self.fast_file=fast_file()
+  def __init__(self,ip='192.168.1.127',f_name='hp34970_tc1.pkl'):
+      self.df  = pd.DataFrame([],columns=['time','dV','Tamb','Tref','Tdmm','Vdc'])
+      self.dmm = DMM(ip)
+      self.f   = fast_file()
+      self.f_name = f_name
   def add_row(self,time,sample,Tamb,Tref,Tdmm,Vdc):
-      new_row = {'time':0.5,'dV':0.0012,'Tamb':15.2,'Tref':24.5,'Tdmm':20.2,'Vdc':16.0811}
+      new_row = {'time':time, 'dV':sample, 'Tamb':Tamb, 'Tref':Tref, 'Tdmm':Tdmm, 'Vdc':Vdc}
+      print (new_row)
       self.df.loc[len(self.df.index)] = new_row
+  def main(self):
+        try:
+            # Your main program logic goes here
+            t1 = time.time()-10000  #get timestamp from long time ago
+            v  = self.dmm.MeasDC( range=0.1, plc=10,channel=101)
+            while True:
+                # Main program loop, can perform other tasks
+                v  = self.dmm.SCPIread()
+                t  = time.time()
+                if (t - t1) >= 600:    #difference is in seconds. 10 min
+                    print ("===================== NEW MUX REFRESH =====================")
+                    t1 = t
+                    Tamb = self.dmm.MeasNTC (102)
+                    Tref = self.dmm.MeasNTC (103)
+                    Tdmm = self.dmm.MeasNTC (104)
+                    Vdc  = self.dmm.MeasDC (range=100.0, plc=10,channel=201)
+                    v  = self.dmm.MeasDC( range=0.1, plc=10,channel=101)    # keep this line last. The main loop use fater Read? cmd
+                self.add_row(time=t, sample=v,Tamb=Tamb, Tref=Tref, Tdmm=Tdmm, Vdc=Vdc)
+                #time.sleep(0.5)		                
+        except KeyboardInterrupt:
+            print("Exiting program.")
+        finally:
+            # Clean up
+            #connection.close()
+            self.dmm.close()
+            self.f.save (fileName=self.f_name, arrayInput=self.df)
