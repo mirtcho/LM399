@@ -1,15 +1,21 @@
 import socket
 import threading
 import time
+import pickle as pkl
 import numpy as np
 import pandas as pd
-import pickle as pkl
+import matplotlib.pyplot as plt
+from scipy.signal import butter, filtfilt
 
 class DMM():
-    def __init__(self,ip='10.0.0.85'):
+    def __init__(self,ip='192.168.1.126',prologix=True):
                 # Set up your socket connection
-        self.server_address = (ip, 1234)  # Adjust the address and port accordingly port 5025 for DMM6500  Prologix:1234
-        #sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if prologix:
+            port = 1234
+        else:
+            port = 5025
+        self.server_address = (ip, port)  # Adjust the address and port accordingly port 5025 for DMM6500  Prologix:1234
+        #self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock  = socket.socket(socket.AF_INET, socket.SOCK_STREAM,socket.IPPROTO_TCP)
         self.sock.connect(self.server_address)
         self.f = fast_file()
@@ -23,9 +29,9 @@ class DMM():
         self.receive_thread = threading.Thread(target=self.receive_data)
         self.receive_thread.start()
         #prologix init code
-        #self.sock.sendall(b'++addr 9\r\n')
+        self.sock.sendall(b'++addr 9\r\n')
         time.sleep(1)
-        #self.sock.sendall(b'++auto\r\n')
+        self.sock.sendall(b'++auto\r\n')
         time.sleep(1)
         self.answer_type = 'float'
         self.sock.sendall(b'Read?\r\n')
@@ -85,7 +91,7 @@ class DMM():
         self.receive_semaphor  = False
         self.sock.sendall(b'Read?\r\n')
         while self.receive_semaphor == False:
-            time.sleep(0.1)
+            time.sleep(0.02)
         return self.rcv_float
     
     def find_resolution (self,plc):
@@ -120,6 +126,15 @@ class DMM():
     
     def MeasNTC(self, channel):
         cmd = b'MEAS:TEMP? THER,10000, (@'+ str(channel).encode('utf-8') + b')\r\n'  # takes 0.2sec
+        self.answer_type       = 'float'
+        self.receive_semaphor  = False
+        self.sock.sendall(cmd)  # takes 0.2sec
+        while self.receive_semaphor == False:
+            time.sleep(0.01)
+        return self.rcv_float
+    
+    def MeasTCouple(self,channel):
+        cmd = b'MEAS:TEMP? TC,J, (@'+ str(channel).encode('utf-8') + b')\r\n'  # takes 0.2sec
         self.answer_type       = 'float'
         self.receive_semaphor  = False
         self.sock.sendall(cmd)  # takes 0.2sec
@@ -216,28 +231,128 @@ class test():
       print (new_row)
       self.df.loc[len(self.df.index)] = new_row
   def main(self):
-        try:
-            # Your main program logic goes here
-            t1 = time.time()-10000  #get timestamp from long time ago
-            v  = self.dmm.MeasDC( range=0.1, plc=10,channel=101)
-            while True:
-                # Main program loop, can perform other tasks
-                v  = self.dmm.SCPIread()
-                t  = time.time()
-                if (t - t1) >= 600:    #difference is in seconds. 10 min
-                    print ("===================== NEW MUX REFRESH =====================")
-                    t1 = t
-                    Tamb = self.dmm.MeasNTC (102)
-                    Tref = self.dmm.MeasNTC (103)
-                    Tdmm = self.dmm.MeasNTC (104)
-                    Vdc  = self.dmm.MeasDC (range=100.0, plc=10,channel=201)
-                    v  = self.dmm.MeasDC( range=0.1, plc=10,channel=101)    # keep this line last. The main loop use fater Read? cmd
-                self.add_row(time=t, sample=v,Tamb=Tamb, Tref=Tref, Tdmm=Tdmm, Vdc=Vdc)
-                #time.sleep(0.5)		                
-        except KeyboardInterrupt:
-            print("Exiting program.")
-        finally:
+      try:
+        # Your main program logic goes here
+        t1 = time.time()-10000  #get timestamp from long time ago
+        v  = self.dmm.MeasDC( range=1.0, plc=10,channel=101)
+        while True:
+            # Main program loop, can perform other tasks
+            v  = self.dmm.SCPIread()
+            t  = time.time()
+            if (t - t1) >= 600:    #difference is in seconds. 10 min
+                print ("===================== NEW MUX REFRESH =====================")
+                t1 = t
+                Tamb = self.dmm.MeasNTC (102)
+                Tref = self.dmm.MeasNTC (103)
+                Tdmm = self.dmm.MeasNTC (104)
+                Vdc  = self.dmm.MeasDC (range=100.0, plc=10,channel=201)
+                v  = self.dmm.MeasDC( range=1.0, plc=10,channel=101)    # keep this line last. The main loop use fater Read? cmd
+            self.add_row(time=t, sample=v,Tamb=Tamb, Tref=Tref, Tdmm=Tdmm, Vdc=Vdc)
+            #time.sleep(0.5)		                
+      except KeyboardInterrupt:
+          print("Exiting program.")
+      finally:
             # Clean up
             #connection.close()
             self.dmm.close()
             self.f.save (fileName=self.f_name, arrayInput=self.df)
+
+
+class test2():
+  # test setup used to check DMM6500 against 7V/10.5Vref
+  # 1.DMM6500 connected to 7Vref
+  # 2.HP34970 channels
+  #  - ch.102 - NTC Tamb
+  #  - ch.206 - Tcouple from Vref
+  #  - Ch.201 - Vref=10,524V  
+  #######################################################
+  def __init__(self,ip1='192.168.1.127',ip2='192.168.1.126',f_name='DMM6500vs_7Vref.pkl'):
+      self.df      = pd.DataFrame([],columns=['time','V10','V7','Tamb','Tref'])
+      self.dmm     = DMM(ip1, prologix=True)
+      self.dmm6500 = DMM(ip2, prologix=False)
+      self.f   = fast_file()
+      self.f_name = f_name
+  def add_row(self,time,V10,V7,Tamb,Tref):
+      new_row = {'time':time,'V10':V10,'V7':V7,'Tamb':Tamb, 'Tref':Tref}
+      print (new_row)
+      self.df.loc[len(self.df.index)] = new_row
+  def main(self):
+      try:
+        # Your main program logic goes here
+        t1 = time.time()-10000  #get timestamp from long time ago
+        v10  = self.dmm.MeasDC( range=10.0, plc=10,channel=201)
+        v7   = self.dmm6500.SCPIread()
+        while True:
+            # Main program loop, can perform other tasks
+            v10  = self.dmm.SCPIread()
+            v7   = self.dmm6500.SCPIread()
+            t  = time.time()
+            if (t - t1) >= 600:    #difference is in seconds. 10 min
+                print ("===================== NEW MUX REFRESH =====================")
+                t1 = t
+                Tamb = self.dmm.MeasNTC (102)
+                Tref = self.dmm.MeasTCouple (206)                
+                v7   = self.dmm6500.SCPIread()
+                v10  = self.dmm.MeasDC (range=10.0, plc=10,channel=201) # keep this line last. The main loop use fater Read? cmd
+            self.add_row(time=t, V10=v10, V7=v7, Tamb=Tamb, Tref=Tref )
+            #time.sleep(0.5)		                
+      except KeyboardInterrupt:
+          print("Exiting program.")
+      finally:
+            # Clean up
+            #connection.close()
+            self.dmm.close()
+            self.dmm6500.close()
+            self.f.save (fileName=self.f_name, arrayInput=self.df)
+
+
+
+class draw():
+  def __init__(self):
+    self.df  = pd.DataFrame([],columns=['time','dV','Tamb','Tref','Tdmm','Vdc'])
+    self.f   = fast_file()
+
+  def show(self, f_name='hp34970_tc1.pkl'):
+    self.df = self.f.load(f_name)
+    t0 = self.df['time'][0]
+    self.df['time'] = self.df['time'] - t0
+    plt.plot (self.df['time'],self.df['Tamb'], self.df['time'],self.df['Tref'],self.df['time'],self.df['Tdmm'] )
+    plt.show()
+    plt.plot (self.df['time'],self.df['dV'])
+    plt.show()
+  def show2(self,f_name='hp34970_tc1.pkl'):
+    self.df = self.f.load(f_name)
+    t0 = self.df['time'][0]
+    self.df['time'] = self.df['time'] - t0
+    fig, (ax0, ax1, ax2) = plt.subplots(nrows=3, ncols=1, sharex=True, figsize=(12, 6))
+    ax0.set_title('Temperatures')
+    ax0.plot (self.df['time'],self.df['Tamb'], self.df['time'],self.df['Tref'],self.df['time'],self.df['Tdmm'] )
+    ax1.set_title('Sample Voltages')
+    ax1.plot (self.df['time'],self.df['dV'])
+    ax2.set_title('PSU Voltages - Vdc')
+    ax2.plot (self.df['time'],self.df['Vdc'])
+    plt.show()
+    #psd
+    Fs=7.0
+    plt.psd(self.df['dV']**2, 65536, Fs, color ="green")
+    plt.xlabel('Frequency') 
+    plt.ylabel('PSD(db)') 
+    plt.suptitle('matplotlib.pyplot.psd() function Example', fontweight ="bold") 
+    plt.show()
+
+  def show3 (self,f_name='hp34970_tc1.pkl'):
+    self.df = self.f.load(f_name)
+    t0 = self.df['time'][0]
+    self.df['time'] = self.df['time'] - t0
+    b,a  = butter (N=2, Wn=0.05,btype='low',analog=False)
+    y = filtfilt(b,a,self.df['dV'])
+    plt.figure(figsize=(12,8))
+    #plt.plot(t,data_set*1000)
+    plt.xlabel('T[sec.]')
+    plt.ylabel('U[V]')
+    #plt.plot(t[20600:20700],data_set[20600:20700])
+    plt.plot(self.df['time'],y)
+    #print (data_set[101]-data_set[102], '  ',data_set[102]-data_set[103])
+    #print ('Mean=',np.mean(data_set),'   StDev=',np.std(data_set),'  Min=',np.min(data_set),'  Max=',np.max(data_set))
+    #print ('Vpp =',np.max(data_set)-np.min(data_set))
+    plt.show()
