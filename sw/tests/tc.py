@@ -15,7 +15,8 @@ import serial
 class cts():
     def __init__ (self):
         #init com prot to 192.Kbps 8 bit ODD, data flow=none
-        self.ser = serial.Serial("COM5", 19200,bytesize=8,parity=serial.PARITY_ODD,timeout=1)
+        #self.ser = serial.Serial("COM5", 19200,bytesize=8,parity=serial.PARITY_ODD,timeout=1) #if windows use this !
+        self.ser = serial.Serial('/dev/ttyUSB0', baudrate=19200, bytesize=8, parity=serial.PARITY_ODD, timeout=1) #try on ubuntu
         #self.ser = serial.Serial("COM5", 19200,bytesize=8,parity=serial.PARITY_NONE,timeout=1)
         # serial.Serial('/dev/ttyS1', 19200, timeout=1)
         self.STX = 0x02  # Start of Text. ToDo shod be 0x02 or 0x82
@@ -40,9 +41,9 @@ class cts():
         self.tx_packet = b'\x02\x81\xC1\xE1\xA1\x03'
         self.ser.write(self.tx_packet)
         self.rx_packet = self.ser.readline()
-        #print ('RAW Answer=',self.rx_packet)
+        print ('RAW Answer=',self.rx_packet)
         self.Tset, self.Tact = self.an_decode(self.rx_packet)
-        #print ('Answer=',self.rx_packet)
+        print ('Answer=',self.rx_packet)
 
     def set_analog(self,Tset=14.5):
         tx_packet =np.zeros(12,dtype=np.ubyte)
@@ -93,22 +94,107 @@ class cts():
 class tc():
     def __init__(self):
         self.bm = b.bm869()
-        self.bm.init_win11()
-        self.e = p.eth()
-        self.e.init_eth('10.0.0.67')
+        self.bm.init()
+        #self.e = p.eth()
+        #self.e.init_eth('10.0.0.67')
         self.cts = cts()
+        file_header=['Time','Sample','Tset','Tact']
+        self.f1=open('BM869_CTS_TC.csv', 'w', encoding='UTF8')
+        self.y1_writer= csv.writer(self.f1)
+        self.y1_writer.writerow(file_header)
 
-    def tst(self,nr_samples=50):
-        for Toffset in range (200):
-            self.cts.set_analog(20+Toffset/10)
+    def tst(self,Tdwel=50,Thold=600):
+        # 1.Hold for Thold/4 at T=25C 
+        T1 = 25
+        self.cts.set_analog(T1+0.01)
+        time.sleep(0.5)
+        self.cts.analog() #dumm.y read to solve issu with wrong read after Tset  
+        t1=time.time()      
+        while ((time.time()-t1) < Thold/4):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+
+        # 2.Run from T=25 to 10c
+        T1= 25
+        T2= 10
+        NrSteps = int(18*np.abs(T1-T2))
+        for Toffset in range (NrSteps):
+            self.cts.set_analog(T1+0.01-Toffset/10)
             time.sleep(0.5)
-            self.cts.set_analog(20+Toffset/10)
-            self.cts.set_analog(20+Toffset/10)
-            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset        
-            for i in range (int(nr_samples)):
-                array_data = self.e.read()
+            #self.cts.set_analog(25.01-Toffset/10)
+            #self.cts.set_analog(25.01-Toffset/10)
+            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset  
+            t1=time.time()      
+            while ((time.time()-t1) < Tdwel):
+                # array_data = self.e.read()
                 bm_data = self.bm.read()
                 self.cts.analog() 
                 #check validity of data before save to file
-                print ('array=',array_data,'  bm869=',bm_data,'Tset=',self.cts.Tset,'Tact=',self.cts.Tact)
+                #print ('array=',array_data,'  bm869=',bm_data,'Tset=',self.cts.Tset,'Tact=',self.cts.Tact)
+                print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+                self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+        while ((time.time()-t1) < Thold):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+
+        # 3. Run from T=10...40C
+        T1 = 10
+        T2 = 40
+        NrSteps = int(18*np.abs(T1-T2))
+        for Toffset in range (NrSteps):
+            self.cts.set_analog(T1+0.01+Toffset/10)
+            time.sleep(0.5)
+            #self.cts.set_analog(5+Toffset/10)
+            #self.cts.set_analog(5+Toffset/10)
+            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset  
+            t1=time.time()      
+            while ((time.time()-t1) < Tdwel):
+                # array_data = self.e.read()
+                bm_data = self.bm.read()
+                self.cts.analog() 
+                #check validity of data before save to file
+                #print ('array=',array_data,'  bm869=',bm_data,'Tset=',self.cts.Tset,'Tact=',self.cts.Tact)
+                print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+                self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+        t1=time.time()
+        # 4. Hold at 40C
+        while ((time.time()-t1) < Thold):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+
+        # 5.Run from T=40 to 25c
+        T1 = 40
+        T2 = 25
+        NrSteps = int(18*np.abs(T1-T2))
+        for Toffset in range (NrSteps):
+            self.cts.set_analog(T1+0.01-Toffset/10)
+            time.sleep(0.5)
+            #self.cts.set_analog(50-Toffset/10)
+            #self.cts.set_analog(50-Toffset/10)
+            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset  
+            t1=time.time()      
+            while ((time.time()-t1) < Tdwel):
+                # array_data = self.e.read()
+                bm_data = self.bm.read()
+                self.cts.analog() 
+                print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+                self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+        # 6. hold at 25C
+        t1=time.time()
+        while ((time.time()-t1) < Thold):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
             
+        self.f1.close()

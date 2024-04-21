@@ -85,7 +85,7 @@ class bm869():
 
   def init(self):
     hid.enumerate()
-    rr=hid.Device(0x820,1) #linux uses caps Device instead of device
+    self.rr=hid.Device(0x820,1) #linux uses caps Device instead of device
 
   def read (self):
     ret_val = self.read_sample()
