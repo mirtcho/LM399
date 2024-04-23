@@ -120,7 +120,7 @@ class tc():
         # 2.Run from T=25 to 10c
         T1= 25
         T2= 10
-        NrSteps = int(18*np.abs(T1-T2))
+        NrSteps = int(10*np.abs(T1-T2))
         for Toffset in range (NrSteps):
             self.cts.set_analog(T1+0.01-Toffset/10)
             time.sleep(0.5)
@@ -146,7 +146,7 @@ class tc():
         # 3. Run from T=10...40C
         T1 = 10
         T2 = 40
-        NrSteps = int(18*np.abs(T1-T2))
+        NrSteps = int(10*np.abs(T1-T2))
         for Toffset in range (NrSteps):
             self.cts.set_analog(T1+0.01+Toffset/10)
             time.sleep(0.5)
@@ -174,7 +174,7 @@ class tc():
         # 5.Run from T=40 to 25c
         T1 = 40
         T2 = 25
-        NrSteps = int(18*np.abs(T1-T2))
+        NrSteps = int(10*np.abs(T1-T2))
         for Toffset in range (NrSteps):
             self.cts.set_analog(T1+0.01-Toffset/10)
             time.sleep(0.5)
@@ -189,6 +189,47 @@ class tc():
                 print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
                 self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
         # 6. hold at 25C
+        t1=time.time()
+        while ((time.time()-t1) < Thold):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+            
+        self.f1.close()
+
+    def tst2(self,Tdwel=50,Thold=600):
+        # 1. hold at 25C
+        self.cts.set_analog(22.01)
+        time.sleep(1.5)
+        self.cts.analog()
+        time.sleep(1.5)
+        t1=time.time()
+        while ((time.time()-t1) < Thold/8):
+            # array_data = self.e.read()
+            bm_data = self.bm.read()
+            self.cts.analog() 
+            print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+            self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+        # 2.Run from T=23.5 to 40c
+        T1 = 22
+        T2 = 40
+        NrSteps = int(10*np.abs(T1-T2))
+        for Toffset in range (NrSteps):
+            self.cts.set_analog(T1+0.01+Toffset/10)
+            time.sleep(0.5)
+            #self.cts.set_analog(50-Toffset/10)
+            #self.cts.set_analog(50-Toffset/10)
+            self.cts.analog() #dumm.y read to solve issu with wrong read after Tset  
+            t1=time.time()      
+            while ((time.time()-t1) < Tdwel):
+                # array_data = self.e.read()
+                bm_data = self.bm.read()
+                self.cts.analog() 
+                print ('Time=',time.time(),' bm869=',bm_data,' Tset=',self.cts.Tset,' Tact=',self.cts.Tact)
+                self.y1_writer.writerow([time.time(),float(bm_data),self.cts.Tset,self.cts.Tact])
+        # 3. hold at 25C
         t1=time.time()
         while ((time.time()-t1) < Thold):
             # array_data = self.e.read()
